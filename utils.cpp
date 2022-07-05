@@ -281,7 +281,7 @@ Mat MyMat::e_complex_mul(const Mat &a, const Mat &b)
         a_planes[0] = a_planes[0].mul(b);
         a_planes[1] = a_planes[1].mul(b);
         Mat ans;
-        merge(_planes, ans);
+        merge(a_planes, ans);
         return ans;
     }
     if (a.channels() == 2 && b.channels() == 2)
