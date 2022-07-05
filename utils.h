@@ -7,31 +7,37 @@ using namespace cv;
 
 namespace fft
 {
-    void calculateDFT2(cv::Mat &src, cv::Mat &dst);
+    void calculateDFT2(Mat &src, Mat &dst);
 
-    void resizedDft2(cv::Mat &complexImg, cv::Mat &resizedDftOutput, Size desiredSize);
+    void resizedDft2(Mat &complexImg, Mat &resizedDftOutput, Size desiredSize);
 
-    void calculateIDFT2(cv::Mat &src, cv::Mat &dst);
+    void calculateIDFT2(Mat &src, Mat &dst);
 }
 
 namespace resp
 {
-    void circshift( cv::Mat& src, cv::Mat& dst, Size shift_size);
+    void circshift( Mat& src, Mat& dst, Size shift_size);
 
-    void shift_sample(cv::Mat &inOutMat, Size shift, cv::Mat kx, cv::Mat ky);
+    void shift_sample(Mat &inOutMat, Size shift, Mat kx, Mat ky);
+
+    void resp_newton(Mat &xt, Mat &xtf, Size displacement, int iterations, Mat kx, Mat ky, Size use_sz);
 
     void respDiff();
 }
 
 namespace MyMat 
 {
-    void make_arr(cv::Mat &inOutArr, int a, int b);
+    void make_arr(Mat &inOutArr, int a, int b);
 
-    cv::Mat e_mul(const cv::Mat&a, const cv::Mat&b);
+    Mat e_mul(const Mat&a, const Mat&b);
 
     Mat e_cos(const Mat &in);
 
     Mat e_sin(const Mat &in);
+
+    Mat e_complex_mul(const Mat&a, const Mat&b);
+
+    Mat conj(const Mat& in);
 }
 
-bool updateRefMu(cv::Mat &response_diff, float &refMu, float zeta=13.0f, float nu=0.3f);
+bool updateRefMu(Mat &response_diff, float &refMu, float zeta=13.0f, float nu=0.3f);

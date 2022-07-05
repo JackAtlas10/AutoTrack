@@ -143,7 +143,8 @@ void resp::shift_sample(Mat &inOutMat, Size shift, Mat kx, Mat ky)
     Shift a sample in the Fourier domain. The shift should be normalized to
     the range [-pi, pi].
     */
-    assert(kx.cols == 1 && ky.rows == 1);
+    assert(kx.rows == 1 && ky.cols == 1);
+    assert(kx.channels() == ky.channels() == 1);
     kx.convertTo(kx, CV_32FC1);
     kx = kx * shift.width;
     ky.convertTo(ky, CV_32FC1);
@@ -151,11 +152,26 @@ void resp::shift_sample(Mat &inOutMat, Size shift, Mat kx, Mat ky)
 
     Mat shift_exp_x(kx.size(), CV_32FC2);
     Mat shift_exp_y(ky.size(), CV_32FC2);
+    // exp(shift_exp_x)
     vector<Mat> x_planes;
     split(shift_exp_x, x_planes);
+    x_planes[0] = MyMat::e_cos(kx);
+    x_planes[1] = MyMat::e_sin(kx);
+    merge(x_planes, shift_exp_x);
+    // exp(shift_exp_y)
     vector<Mat> y_planes;
     split(shift_exp_y, y_planes);
+    y_planes[0] = MyMat::e_cos(ky);
+    y_planes[1] = MyMat::e_sin(ky);
+    merge(y_planes, shift_exp_y);
+    // multiply
+    inOutMat = MyMat::e_complex_mul(MyMat::e_complex_mul(inOutMat, shift_exp_y), shift_exp_x);
 };
+
+void resp::resp_newton(Mat &xt, Mat &xtf, Size displacement, int iterations, Mat kx, Mat ky, Size use_sz)
+{
+    
+}
 
 void MyMat::make_arr(Mat &inOutArr, int a, int b)
 {
@@ -238,6 +254,49 @@ Mat MyMat::e_mul(const Mat &a, const Mat &b)
     }
 }
 
+Mat MyMat::e_complex_mul(const Mat &a, const Mat &b)
+{
+    assert(a.channels() <= 2 && b.channels() <= 2); // assure that 2 input matrices must be complex
+    assert(a.rows == b.rows && a.cols == b.cols);   // 2 inputs must have same size
+    Mat a_ = a;
+    Mat b_ = b;
+    if (a.channels() == 1 && b.channels() == 1)
+    {
+        return MyMat::e_mul(a, b);
+    }
+    if (a.channels() == 1 && b.channels() == 2)
+    {
+        vector<Mat> b_planes;
+        split(b, b_planes);
+        b_planes[0] = b_planes[0].mul(a);
+        b_planes[1] = b_planes[1].mul(a);
+        Mat ans;
+        merge(b_planes, ans);
+        return ans;
+    }
+    if (a.channels() == 2 && b.channels() == 1)
+    {
+        vector<Mat> a_planes;
+        split(a, a_planes);
+        a_planes[0] = a_planes[0].mul(b);
+        a_planes[1] = a_planes[1].mul(b);
+        Mat ans;
+        merge(_planes, ans);
+        return ans;
+    }
+    if (a.channels() == 2 && b.channels() == 2)
+    {
+        vector<Mat> a_planes, b_planes;
+        split(a, a_planes);
+        split(b, b_planes);
+        Mat realOut = a_planes[0].mul(b_planes[0]) - b_planes[1].mul(a_planes[1]);
+        Mat imagOut = a_planes[1].mul(b_planes[0]) + b_planes[1].mul(a_planes[0]);
+        Mat ans;
+        merge(vector<Mat>{realOut, imagOut}, ans);
+        return ans;
+    }
+}
+
 Mat MyMat::e_cos(const Mat &inImg)
 {
     assert(inImg.channels() == 1);
@@ -269,6 +328,17 @@ Mat MyMat::e_sin(const Mat &inImg)
             ans.at<float>(i, j) = sin(inImg.at<float>(i, j));
         }
     }
+    return ans;
+}
+
+Mat MyMat::conj(const Mat &in)
+{
+    assert(in.channels() == 2);
+    vector<Mat> planes;
+    split(in, planes);
+    planes[1] = planes[1] * (-1);
+    Mat ans;
+    merge(planes, ans);
     return ans;
 }
 
