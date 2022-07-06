@@ -1,5 +1,7 @@
 #include <utils.h>
 
+/*-------------------------------------------------------------------------------*/
+// fft-related operations
 void fft::calculateDFT2(Mat &src, Mat &dst)
 {
     // define mat consists of two mat, one for real values and the other for complex values
@@ -108,6 +110,8 @@ void fft::calculateIDFT2(Mat &src, Mat &dst)
     }
 };
 
+
+/*---------------------------------------------------------------------------------*/
 void resp::circshift(Mat &src, Mat &dst, Size shiftSize)
 {
     Mat tempMat = Mat::zeros(src.size(), src.type());
@@ -168,11 +172,46 @@ void resp::shift_sample(Mat &inOutMat, Size shift, Mat kx, Mat ky)
     inOutMat = MyMat::e_complex_mul(MyMat::e_complex_mul(inOutMat, shift_exp_y), shift_exp_x);
 };
 
-void resp::resp_newton(Mat &xt, Mat &xtf, Size displacement, int iterations, Mat kx, Mat ky, Size use_sz)
+Size resp::resp_newton(Mat &xt, Mat &xtf, int newton_iterations, Mat kx, Mat ky, Size use_sz)
 {
-    
-}
+    assert(xt.channels() == 1 && xtf.channels() == 2);
+    Size maxLoc = MyMat::max_loc(xt);
+    int col = static_cast<int>(maxLoc.width);
+    int row = static_cast<int>(maxLoc.height);
 
+    int temp = floor((use_sz.height - 1) / 2.0f);
+    int trans_row = (row - 1 + temp) % use_sz.height - temp;
+    temp = floor((use_sz.width - 1) / 2.0f);
+    int trans_col = (col - 1 + temp) % use_sz.width - temp;
+    float init_pos_x = 2 * M_PI * trans_col / use_sz.width;
+    float init_pos_y = 2 * M_PI * trans_row / use_sz.height;
+
+    float max_pos_x = init_pos_x;
+    float max_pos_y = init_pos_y;
+    Mat exp_iky = MyMat::exp_complex(ky * (max_pos_y));
+    Mat exp_ikx = MyMat::exp_complex(kx * (max_pos_x));
+    Mat kx2 = kx.mul(kx);
+    Mat ky2 = ky.mul(ky);
+    int iter = 1;
+    Mat ky_exp_ky, kx_exp_kx, y_resp, resp_x, grad_y, grad_x;
+    Mat ival, H_yy, H_xx, H_xy, detH;
+    Mat tempmat;
+    while (iter < newton_iterations)
+    {
+        ky_exp_ky = MyMat::e_mul(ky, exp_iky);
+        kx_exp_kx = MyMat::e_mul(kx, exp_ikx);
+
+        y_resp = exp_iky * xtf;
+        resp_x = xtf * exp_ikx;
+        grad_y = -MyMat::imag(ky_exp_ky * resp_x);
+        grad_x = -MyMat::imag(y_resp * kx_exp_kx);
+        tempmat = exp_iky * resp_x;
+        H_yy = MyMat::real(-((ky2 * exp_iky)*resp_x) + ival);
+        H_xx = MyMat::real(-(ky_exp_ky*(xtf*kx_exp_kx)) + ival);
+    }
+}
+/*----------------------------------------------------------------------*/
+// operations on Mat data type
 void MyMat::make_arr(Mat &inOutArr, int a, int b)
 {
     assert(a != b);
@@ -342,6 +381,81 @@ Mat MyMat::conj(const Mat &in)
     return ans;
 }
 
+Mat MyMat::e_exp(const Mat &in)
+{
+    if (in.channels() == 1)
+    {
+        Mat res;
+        cv::exp(in, res);
+        return res;
+    }
+    Mat res(in.size(), CV_32F);
+    vector<Mat> in_planes;
+    split(in, in_planes);
+    vector<Mat> out_planes;
+    for (int i = 0; i < in.channels(); i++)
+    {
+        Mat temp;
+        cv::exp(in_planes[i], temp);
+        out_planes.push_back(temp);
+    }
+    merge(out_planes, res);
+    return res;
+}
+
+Mat MyMat::exp_complex(const Mat &in)
+{
+    // perform euler formular on 1-channel matrix
+    // exp_complex(matrix) = e ^ (1j * matrix)
+    Mat cos = MyMat::e_cos(in.clone());
+    Mat sin = MyMat::e_sin(in.clone());
+    vector<Mat> planes = {cos, sin};
+    Mat res;
+    merge(planes, res);
+    return res;
+}
+
+Mat MyMat::real(const Mat &compMat)
+{
+    assert(compMat.channels() == 2);
+    vector<Mat> planes;
+    split(compMat, planes);
+    return planes[0];
+}
+
+Mat MyMat::imag(const Mat &compMat)
+{
+    assert(compMat.channels() == 2);
+    vector<Mat> planes;
+    split(compMat, planes);
+    return planes[1];
+}
+
+Size MyMat::max_loc(Mat in)
+{
+    assert(in.channels() == 1);
+    in.convertTo(in, CV_32FC1);
+    int rows = in.rows;
+    int cols = in.cols;
+    float max_val = std::numeric_limits<float>::min();
+    int max_row_loc;
+    int max_col_loc;
+    for (int i = 0; i < rows; i++)
+    {
+        for (int j = 0; j < cols; j++)
+        {
+            if (in.at<float>(i, j) > max_val)
+            {
+                max_val = in.at<float>(i, j);
+                max_row_loc = i;
+                max_col_loc = j;
+            }
+        }
+    }
+    return Size(max_col_loc, max_row_loc);
+}
+
+/*-----------------------------------------------------------------------------*/
 bool updateRefMu(Mat &response_diff, float &refMu, float zeta, float nu)
 {
     bool occ;
