@@ -110,7 +110,6 @@ void fft::calculateIDFT2(Mat &src, Mat &dst)
     }
 };
 
-
 /*---------------------------------------------------------------------------------*/
 void resp::circshift(Mat &src, Mat &dst, Size shiftSize)
 {
@@ -172,17 +171,20 @@ void resp::shift_sample(Mat &inOutMat, Size shift, Mat kx, Mat ky)
     inOutMat = MyMat::e_complex_mul(MyMat::e_complex_mul(inOutMat, shift_exp_y), shift_exp_x);
 };
 
-Size resp::resp_newton(Mat &xt, Mat &xtf, int newton_iterations, Mat kx, Mat ky, Size use_sz)
+Size resp::resp_newton(Mat &xt, Mat &xtf, int newton_iterations, Mat ky, Mat kx, Size use_sz)
 {
     assert(xt.channels() == 1 && xtf.channels() == 2);
-    Size maxLoc = MyMat::max_loc(xt);
-    int col = static_cast<int>(maxLoc.width);
-    int row = static_cast<int>(maxLoc.height);
+    float init_max_resp;
+    Size maxLoc = MyMat::max_loc(xt, init_max_resp);
+    int col = static_cast<int>(maxLoc.width) + 1;
+    int row = static_cast<int>(maxLoc.height) + 1;
 
     int temp = floor((use_sz.height - 1) / 2.0f);
     int trans_row = (row - 1 + temp) % use_sz.height - temp;
     temp = floor((use_sz.width - 1) / 2.0f);
     int trans_col = (col - 1 + temp) % use_sz.width - temp;
+
+
     float init_pos_x = 2 * M_PI * trans_col / use_sz.width;
     float init_pos_y = 2 * M_PI * trans_row / use_sz.height;
 
@@ -190,25 +192,68 @@ Size resp::resp_newton(Mat &xt, Mat &xtf, int newton_iterations, Mat kx, Mat ky,
     float max_pos_y = init_pos_y;
     Mat exp_iky = MyMat::exp_complex(ky * (max_pos_y));
     Mat exp_ikx = MyMat::exp_complex(kx * (max_pos_x));
+
     Mat kx2 = kx.mul(kx);
+    kx2 = MyMat::real2Complex(kx2);
     Mat ky2 = ky.mul(ky);
+    ky2 = MyMat::real2Complex(ky2);
     int iter = 1;
     Mat ky_exp_ky, kx_exp_kx, y_resp, resp_x, grad_y, grad_x;
-    Mat ival, H_yy, H_xx, H_xy, detH;
-    Mat tempmat;
+    Mat ival_, H_yy, H_xx, H_xy, detH;
+    float ival;
+    Mat tempmat, temp1;
     while (iter < newton_iterations)
     {
-        ky_exp_ky = MyMat::e_mul(ky, exp_iky);
-        kx_exp_kx = MyMat::e_mul(kx, exp_ikx);
+        ky_exp_ky = MyMat::e_mul(exp_iky, ky);
 
-        y_resp = exp_iky * xtf;
+        kx_exp_kx = MyMat::e_mul(exp_ikx, kx);
+
+        y_resp = exp_iky * xtf; 
+
         resp_x = xtf * exp_ikx;
+
         grad_y = -MyMat::imag(ky_exp_ky * resp_x);
+
         grad_x = -MyMat::imag(y_resp * kx_exp_kx);
+
         tempmat = exp_iky * resp_x;
-        H_yy = MyMat::real(-((ky2 * exp_iky)*resp_x) + ival);
-        H_xx = MyMat::real(-(ky_exp_ky*(xtf*kx_exp_kx)) + ival);
+        vector<Mat> tempPlanes;
+        split(tempmat, tempPlanes);
+        merge(vector<Mat>{-tempPlanes[1], tempPlanes[0]}, ival_);
+        ival = ival_.at<float>(0, 0);
+
+        tempmat = -(MyMat::e_complex_mul(ky2, exp_iky) * resp_x);
+        H_yy = MyMat::real(tempmat + ival * Mat::ones(tempmat.size(), tempmat.type()));
+
+        tempmat = -(y_resp * MyMat::e_complex_mul(kx2, exp_ikx));
+        H_xx = MyMat::real(tempmat + ival * Mat::ones(tempmat.size(), tempmat.type()));
+
+        H_xy = MyMat::real(-(ky_exp_ky * (xtf * kx_exp_kx)));
+                                        
+        detH = MyMat::e_mul(H_yy, H_xx) - MyMat::e_mul(H_xy, H_xy);
+
+        temp1 = (MyMat::e_mul(H_yy, grad_y) - MyMat::e_mul(H_xy, grad_x)) / detH.at<float>(0, 0);
+        max_pos_y = max_pos_y - temp1.at<float>(0, 0);
+
+        temp1 = MyMat::e_mul(H_yy, grad_x) - MyMat::e_mul(H_xy, grad_y) / detH.at<float>(0, 0);
+        max_pos_x = max_pos_x - temp1.at<float>(0, 0);
+
+        exp_iky = MyMat::exp_complex(ky * max_pos_y);
+        exp_ikx = MyMat::exp_complex(kx * max_pos_x);
+
+        iter = iter + 1;
     }
+    float max_response = 1.0f / (use_sz.height * use_sz.width) * MyMat::real((exp_iky * xtf) * exp_ikx).at<float>(0, 0);
+
+    if (max_response < init_max_resp)
+    {
+        max_pos_y = init_pos_y;
+        max_pos_x = init_pos_x;
+    }
+    return Size(
+        (fmod(max_pos_x + M_PI, 2 * M_PI) - M_PI) / (2 * M_PI) * use_sz.width,
+        (fmod(max_pos_y + M_PI, 2 * M_PI) - M_PI) / (2 * M_PI) * use_sz.height
+        );
 }
 /*----------------------------------------------------------------------*/
 // operations on Mat data type
@@ -232,6 +277,11 @@ void MyMat::make_arr(Mat &inOutArr, int a, int b)
     }
 }
 
+Mat MyMat::e_plus(const Mat&a, const Mat&b)
+{
+    assert((a.rows == b.rows && a.cols == b.cols));
+}
+
 Mat MyMat::e_mul(const Mat &a, const Mat &b)
 {
     /*
@@ -240,9 +290,13 @@ Mat MyMat::e_mul(const Mat &a, const Mat &b)
     int a_row = a.rows, a_col = a.cols, a_chan = a.channels();
     int b_row = b.rows, b_col = b.cols, b_chan = b.channels();
     assert(b_row == 1 || b_col == 1 || (b_row == a_row && b_col == a_col));
-    assert(b_row != 1 || b_col != 1);
     assert(b_chan <= a_chan);
     Mat ans;
+    if (b_row == 1 && b_col == 1)
+    {
+        ans = a * b.at<float>(0, 0);
+        return ans;
+    }
     if (b_row == 1)
     {
         Mat temp = Mat::zeros(a.size(), a.type());
@@ -299,6 +353,7 @@ Mat MyMat::e_complex_mul(const Mat &a, const Mat &b)
     assert(a.rows == b.rows && a.cols == b.cols);   // 2 inputs must have same size
     Mat a_ = a;
     Mat b_ = b;
+    Mat ans;
     if (a.channels() == 1 && b.channels() == 1)
     {
         return MyMat::e_mul(a, b);
@@ -309,9 +364,7 @@ Mat MyMat::e_complex_mul(const Mat &a, const Mat &b)
         split(b, b_planes);
         b_planes[0] = b_planes[0].mul(a);
         b_planes[1] = b_planes[1].mul(a);
-        Mat ans;
         merge(b_planes, ans);
-        return ans;
     }
     if (a.channels() == 2 && b.channels() == 1)
     {
@@ -319,9 +372,7 @@ Mat MyMat::e_complex_mul(const Mat &a, const Mat &b)
         split(a, a_planes);
         a_planes[0] = a_planes[0].mul(b);
         a_planes[1] = a_planes[1].mul(b);
-        Mat ans;
         merge(a_planes, ans);
-        return ans;
     }
     if (a.channels() == 2 && b.channels() == 2)
     {
@@ -330,10 +381,9 @@ Mat MyMat::e_complex_mul(const Mat &a, const Mat &b)
         split(b, b_planes);
         Mat realOut = a_planes[0].mul(b_planes[0]) - b_planes[1].mul(a_planes[1]);
         Mat imagOut = a_planes[1].mul(b_planes[0]) + b_planes[1].mul(a_planes[0]);
-        Mat ans;
         merge(vector<Mat>{realOut, imagOut}, ans);
-        return ans;
     }
+    return ans;
 }
 
 Mat MyMat::e_cos(const Mat &inImg)
@@ -431,7 +481,16 @@ Mat MyMat::imag(const Mat &compMat)
     return planes[1];
 }
 
-Size MyMat::max_loc(Mat in)
+Mat MyMat::real2Complex(const Mat& realMat)
+{
+    assert(realMat.channels() == 1);
+    vector<Mat> planes = {realMat, Mat::zeros(realMat.size(), realMat.type())};
+    Mat ans;
+    merge(planes, ans);
+    return ans;
+};
+
+Size MyMat::max_loc(Mat in, float &maxVal)
 {
     assert(in.channels() == 1);
     in.convertTo(in, CV_32FC1);
@@ -452,6 +511,7 @@ Size MyMat::max_loc(Mat in)
             }
         }
     }
+    maxVal = max_val;
     return Size(max_col_loc, max_row_loc);
 }
 

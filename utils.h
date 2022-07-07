@@ -18,7 +18,7 @@ namespace resp
 {
     void circshift( Mat& src, Mat& dst, Size shift_size);
 
-    void shift_sample(Mat &inOutMat, Size shift, Mat kx, Mat ky);
+    void shift_sample(Mat &inOutMat, Size shift, Mat ky, Mat kx);
 
     Size resp_newton(Mat &xt, Mat &xtf, int iterations, Mat kx, Mat ky, Size use_sz);
 
@@ -32,6 +32,8 @@ namespace MyMat
     void make_arr(Mat &inOutArr, int a, int b);
 
     Mat e_complex_mul(const Mat&a, const Mat&b); // element-wise complex multiplication
+
+    Mat e_plus(const Mat&a, const Mat&b);
 
     Mat e_mul(const Mat&a, const Mat&b);
 
@@ -49,9 +51,9 @@ namespace MyMat
 
     Mat imag(const Mat& compMat);
 
-    
+    Mat real2Complex(const Mat& realMat);    
 
-    Size max_loc(Mat in);
+    Size max_loc(Mat in, float& maxVal);
 }
 
 bool updateRefMu(Mat &response_diff, float &refMu, float zeta=13.0f, float nu=0.3f);
